@@ -10,12 +10,16 @@ package com.ackermansoftware.offthegrid.generator;
  */
 public class LatinSquareBuilder {
 
+	// Values to determine success or failure of the current row.
+	private static final boolean NEXT_ROW = true;
+	private static final boolean RETRY_ROW = false;
+
 	public static final int SIZE = 26;
 
 	private GridDisplay display;
 	private final EntropySource rand;
 
-	private final BitField[] columns = new BitField[SIZE];
+	private final BitField[] colMasks = new BitField[SIZE];
 
 	public LatinSquareBuilder(EntropySource rand) {
 		this.rand = rand;
@@ -27,40 +31,65 @@ public class LatinSquareBuilder {
 	 */
 	public void generate(GridDisplay output) {
 		display = output;
-		for (int i = 0; i < columns.length; i++) {
-			columns[i] = new BitField();
-		}
+		initializeColumnsToZero();
 		int currentRow = 0;
-		while (currentRow < SIZE) {
-			currentRow = calculateRow(currentRow);
+		for (int row = 0; row < SIZE; row++) {
+			// Retries calculating the row until it succeeds.
+			while (!calculateRow(currentRow)) {}
 		}
 	}
 
-	private int calculateRow(int row) {
-		BitField currentRow = new BitField();
+	/**
+	 * Calculate the current row's values and set them into the output. If it
+	 * succeeds, returns true. If it can't complete, it returns false.
+	 */
+	private boolean calculateRow(int row) {
 		int[] outputValues = new int[SIZE];
-		for (int i = 0; i < columns.length; i++) {
-			BitField used = currentRow.combine(columns[i]);
-			if (used.isFull()) {
-				return row;
+
+		BitField rowMask = new BitField();
+		// Add all columns
+		for (int col = 0; col < colMasks.length; col++) {
+			BitField rowAndColMask = rowMask.combine(colMasks[col]);
+			if (cannotCompleteCurrentRow(rowAndColMask)) {
+				return RETRY_ROW;
+			} else {
+				int character = findUnusedCharacter(rowAndColMask);
+				rowMask.set(character);
+				outputValues[col] = character;
+				display.displayAt(row, col, character);
 			}
-			int candidate = findUnusedCandidate(used);
-			currentRow.set(candidate);
-			outputValues[i] = candidate;
-			display.displayAt(row, i, candidate);
 		}
-		// Set columns with values chosen.
-		for (int i = 0; i < outputValues.length; i++) {
-			columns[i].set(outputValues[i]);
-		}
-		return row + 1;
+
+		addToColumnMasks(outputValues);
+		return NEXT_ROW;
 	}
 
-	private int findUnusedCandidate(BitField used) {
-	  int candidate;
-	  do {
-			candidate = rand.randomNumber(SIZE);
-	  } while (used.isSet(candidate));
-	  return candidate;
+	private boolean cannotCompleteCurrentRow(BitField rowAndColMask) {
+	  return rowAndColMask.isFull();
   }
+
+	private void initializeColumnsToZero() {
+		for (int i = 0; i < colMasks.length; i++) {
+			colMasks[i] = new BitField();
+		}
+	}
+
+	private void addToColumnMasks(int[] outputValues) {
+	  for (int i = 0; i < outputValues.length; i++) {
+			colMasks[i].set(outputValues[i]);
+		}
+  }
+
+	/**
+	 * Find the next character for this row that doesn't conflict with the
+	 * existing row and column bitfields.
+	 */
+	private int findUnusedCharacter(BitField rowAndColMask) {
+		while (true) {
+			int candidateCharacter = rand.randomNumber(SIZE);
+			if (!rowAndColMask.isSet(candidateCharacter)) {
+				return candidateCharacter;
+			}
+		}
+	}
 }
